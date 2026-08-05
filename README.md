@@ -21,3 +21,6 @@ The admin page has the Open/Close Ratings control. Closing ratings preserves all
 32 unique current Friday/Sunday participants: 28 skaters and four goalies (Craig Scolack, Hao Chau, Mat Carriere, Lilly Isberg).
 
 Photos are resized to 320×320 JPEG and stored in the new Neon database.
+
+## Admin player deletion
+The admin dashboard includes a Delete button for each player. Deleting removes the player from the public list and removes all ratings they gave or received.
