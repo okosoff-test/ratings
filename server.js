@@ -6,7 +6,14 @@ const path = require('path');
 
 const app = express();
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) return cb(new Error('Please choose an image file.'));
+    cb(null, true);
+  }
+});
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 
 const seedPlayers = [
@@ -52,6 +59,30 @@ app.get('/api/status', async (_req,res) => {
   const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   res.json({open:s.rows[0].ratings_open});
 });
+app.post('/api/players/add', async (req,res) => {
+  const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
+  if(!s.rows[0].ratings_open) return res.status(403).json({error:'Player ratings are currently closed.'});
+  const firstName = String(req.body.firstName || '').trim().replace(/\s+/g,' ');
+  const lastName = String(req.body.lastName || '').trim().replace(/\s+/g,' ');
+  const isGoalie = Boolean(req.body.isGoalie);
+  if(firstName.length < 2 || lastName.length < 2) return res.status(400).json({error:'Enter both your first and last name.'});
+  if(firstName.length > 50 || lastName.length > 50) return res.status(400).json({error:'Name is too long.'});
+  if(!/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(firstName) || !/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(lastName))
+    return res.status(400).json({error:'Use letters, spaces, apostrophes, periods, or hyphens only.'});
+  const existing = await pool.query(`SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo
+    FROM players WHERE LOWER(first_name)=LOWER($1) AND LOWER(last_name)=LOWER($2) LIMIT 1`,[firstName,lastName]);
+  if(existing.rows[0]) return res.status(409).json({error:'That name is already on the list.',player:existing.rows[0]});
+  try {
+    const q = await pool.query(`INSERT INTO players(first_name,last_name,is_goalie) VALUES($1,$2,$3)
+      RETURNING id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo`,[firstName,lastName,isGoalie]);
+    res.status(201).json(q.rows[0]);
+  } catch (err) {
+    if(err.code === '23505') return res.status(409).json({error:'That name is already on the list.'});
+    console.error('Add player failed:',err);
+    res.status(500).json({error:'Could not add your name. Please try again.'});
+  }
+});
+
 app.get('/api/players', async (_req,res) => {
   const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Player ratings are currently closed.'});
@@ -64,16 +95,34 @@ app.get('/api/photo/:id', async (req,res) => {
   if(!q.rows[0] || !q.rows[0].photo) return res.status(404).end();
   res.type(q.rows[0].photo_type || 'image/jpeg').send(q.rows[0].photo);
 });
-app.post('/api/photo/:id', upload.single('photo'), async (req,res) => {
-  const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
-  if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
-  if(!req.file) return res.status(400).json({error:'Choose a photo.'});
-  const exists=await pool.query('SELECT completed FROM players WHERE id=$1',[req.params.id]);
-  if(!exists.rows[0]) return res.status(404).json({error:'Player not found.'});
-  if(exists.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
-  const photo=await sharp(req.file.buffer).rotate().resize(320,320,{fit:'cover'}).jpeg({quality:78}).toBuffer();
-  await pool.query('UPDATE players SET photo=$1,photo_type=$2 WHERE id=$3',[photo,'image/jpeg',req.params.id]);
-  res.json({ok:true});
+app.post('/api/photo/:id', (req, res) => {
+  upload.single('photo')(req, res, async (uploadErr) => {
+    if (uploadErr) {
+      const message = uploadErr.code === 'LIMIT_FILE_SIZE'
+        ? 'Photo is too large. Please choose a photo under 20 MB.'
+        : (uploadErr.message || 'Photo upload failed.');
+      return res.status(400).json({ error: message });
+    }
+    try {
+      const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
+      if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
+      if(!req.file) return res.status(400).json({error:'Choose a photo.'});
+      const exists=await pool.query('SELECT completed FROM players WHERE id=$1',[req.params.id]);
+      if(!exists.rows[0]) return res.status(404).json({error:'Player not found.'});
+      if(exists.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
+      let photo;
+      try {
+        photo=await sharp(req.file.buffer, { failOn: 'none' }).rotate().resize(320,320,{fit:'cover'}).jpeg({quality:78}).toBuffer();
+      } catch (_err) {
+        return res.status(400).json({error:'This photo format could not be processed. Please use a JPG, PNG, or a photo taken directly with your phone camera.'});
+      }
+      await pool.query('UPDATE players SET photo=$1,photo_type=$2 WHERE id=$3',[photo,'image/jpeg',req.params.id]);
+      res.json({ok:true});
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      res.status(500).json({error:'Photo upload failed on the server. Please try a smaller photo.'});
+    }
+  });
 });
 app.get('/api/rate/:raterId', async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
