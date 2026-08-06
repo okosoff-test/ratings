@@ -231,6 +231,20 @@ app.get('/api/admin/data',requireAdmin,async(_req,res)=>{
     FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY p.is_goalie,p.last_name,p.first_name`);
   res.json({open:s.rows[0].ratings_open,players:p.rows});
 });
+
+app.get('/api/admin/ratings',requireAdmin,async(_req,res)=>{
+  const q=await pool.query(`SELECT r.id,r.rater_id,r.rated_id,r.score,r.created_at,
+    giver.first_name AS rater_first_name,giver.last_name AS rater_last_name,
+    receiver.first_name AS rated_first_name,receiver.last_name AS rated_last_name,
+    receiver.is_goalie AS rated_is_goalie
+    FROM ratings r
+    JOIN players giver ON giver.id=r.rater_id
+    JOIN players receiver ON receiver.id=r.rated_id
+    WHERE giver.active=TRUE AND receiver.active=TRUE
+    ORDER BY receiver.last_name,receiver.first_name,giver.last_name,giver.first_name`);
+  res.json(q.rows);
+});
+
 app.post('/api/admin/toggle',requireAdmin,async(req,res)=>{
   const open=Boolean(req.body.open); await pool.query('UPDATE settings SET ratings_open=$1 WHERE id=1',[open]); res.json({ok:true,open});
 });
