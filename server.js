@@ -3,6 +3,7 @@ const multer = require('multer');
 const sharp = require('sharp');
 const { Pool } = require('pg');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -15,16 +16,17 @@ const upload = multer({
   }
 });
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
+const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || ADMIN_PASSWORD;
 
 const seedPlayers = [
- ['Francesco','Aiuto',false],['Sean','Antaya',false],['Brett','Boissonneau',false],['Derek','Boissonneau',false],
- ['Dj','Cassady',false],['Luca','Cavallaro',false],['Phong','Chau',false],['Larry','Cichon',false],
- ['Anthony','Derose',false],['Jeyden','Edwards',false],['Marc','Frey',false],['Kaoru','Geddes',false],
- ['Spencer','Gereige',false],['Brad','Gervais',false],['Matthew','Glavine',false],['Jesse','Gouin',false],
- ['Jason','Haskett',false],['Daniel','Hrubik',false],['Maurice','Hung',false],['Sean','Ivany',false],
- ['Ethan','Lafontaine',false],['Phan','Ly',false],['Drew','Menard',false],['Ferd','Mireault',false],
- ['Kevin','Richter',false],['Justin','Simard',false],['Kyle','Smith',false],['John','Srnec',false],
- ['Mat','Carriere',true],['Hao','Chau',true],['Lilly','Isberg',true],['Craig','Scolack',true]
+ ['Francesco','Aiuto',false,'5199801015'],['Sean','Antaya',false,'5199846719'],['Brett','Boissonneau',false,'2263465222'],['Derek','Boissonneau',false,'5195660729'],
+ ['Dj','Cassady',false,'5199657030'],['Luca','Cavallaro',false,'2263457261'],['Phong','Chau',false,'5197966541'],['Larry','Cichon',false,'5199951267'],
+ ['Anthony','Derose',false,'2267870085'],['Jeyden','Edwards',false,'2263477632'],['Marc','Frey',false,'5199711441'],['Kaoru','Geddes',false,'2267570998'],
+ ['Spencer','Gereige',false,'5195620385'],['Brad','Gervais',false,'2269751940'],['Matthew','Glavine',false,'4164571639'],['Jesse','Gouin',false,'3135733209'],
+ ['Jason','Haskett',false,'5199807794'],['Daniel','Hrubik',false,'5198196863'],['Maurice','Hung',false,'5195628732'],['Sean','Ivany',false,'5068509258'],
+ ['Ethan','Lafontaine',false,'2263503276'],['Phan','Ly',false,'5195669288'],['Drew','Menard',false,'5195649643'],['Ferd','Mireault',false,'2269758301'],
+ ['Kevin','Richter',false,'5197840563'],['Justin','Simard',false,'5195646366'],['Kyle','Smith',false,'5199844043'],['John','Srnec',false,'2263446040'],
+ ['Mat','Carriere',true,'2263500217'],['Hao','Chau',true,'5199959884'],['Lilly','Isberg',true,'2898084633'],['Craig','Scolack',true,'5199826311']
 ];
 
 app.use(express.json({ limit: '1mb' }));
@@ -38,19 +40,47 @@ async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS players (
     id SERIAL PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, is_goalie BOOLEAN NOT NULL DEFAULT FALSE,
     photo BYTEA, photo_type TEXT, completed BOOLEAN NOT NULL DEFAULT FALSE, completed_at TIMESTAMPTZ,
-    active BOOLEAN NOT NULL DEFAULT TRUE, UNIQUE(first_name,last_name)
+    active BOOLEAN NOT NULL DEFAULT TRUE, phone_normalized TEXT, UNIQUE(first_name,last_name)
   )`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`);
+  await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS phone_normalized TEXT`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ratings (
     id SERIAL PRIMARY KEY, rater_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     rated_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     score NUMERIC(3,1) NOT NULL CHECK(score>=1 AND score<=10), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(rater_id,rated_id), CHECK(rater_id<>rated_id)
   )`);
-  for (const [first,last,goalie] of seedPlayers) {
-    await pool.query(`INSERT INTO players(first_name,last_name,is_goalie) VALUES($1,$2,$3)
-      ON CONFLICT(first_name,last_name) DO UPDATE SET is_goalie=EXCLUDED.is_goalie`, [first,last,goalie]);
+  for (const [first,last,goalie,phone] of seedPlayers) {
+    await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized) VALUES($1,$2,$3,$4)
+      ON CONFLICT(first_name,last_name) DO UPDATE SET is_goalie=EXCLUDED.is_goalie, phone_normalized=EXCLUDED.phone_normalized`, [first,last,goalie,phone]);
   }
+}
+
+
+function normalizePhone(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  return digits;
+}
+function issuePlayerToken(playerId) {
+  const expires = Date.now() + 12 * 60 * 60 * 1000;
+  const payload = `${playerId}.${expires}`;
+  const sig = crypto.createHmac('sha256', PLAYER_TOKEN_SECRET).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+function verifyPlayerToken(token, playerId) {
+  if (!token) return false;
+  const parts = String(token).split('.');
+  if (parts.length !== 3) return false;
+  const [id, expires, sig] = parts;
+  if (Number(id) !== Number(playerId) || Number(expires) < Date.now()) return false;
+  const expected = crypto.createHmac('sha256', PLAYER_TOKEN_SECRET).update(`${id}.${expires}`).digest('hex');
+  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { return false; }
+}
+function requirePlayer(req,res,next){
+  const id = req.params.raterId || req.params.id;
+  if(!verifyPlayerToken(req.headers['x-player-token'], id)) return res.status(401).json({error:'Phone verification required. Please return and verify your phone number.'});
+  next();
 }
 
 function adminOk(req) { return req.headers['x-admin-password'] === ADMIN_PASSWORD; }
@@ -66,6 +96,8 @@ app.post('/api/players/add', async (req,res) => {
   const firstName = String(req.body.firstName || '').trim().replace(/\s+/g,' ');
   const lastName = String(req.body.lastName || '').trim().replace(/\s+/g,' ');
   const isGoalie = Boolean(req.body.isGoalie);
+  const phone = normalizePhone(req.body.phone);
+  if(phone.length !== 10) return res.status(400).json({error:'Enter a valid 10-digit phone number.'});
   if(firstName.length < 2 || lastName.length < 2) return res.status(400).json({error:'Enter both your first and last name.'});
   if(firstName.length > 50 || lastName.length > 50) return res.status(400).json({error:'Name is too long.'});
   if(!/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(firstName) || !/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(lastName))
@@ -74,14 +106,27 @@ app.post('/api/players/add', async (req,res) => {
     FROM players WHERE active=TRUE AND LOWER(first_name)=LOWER($1) AND LOWER(last_name)=LOWER($2) LIMIT 1`,[firstName,lastName]);
   if(existing.rows[0]) return res.status(409).json({error:'That name is already on the list.',player:existing.rows[0]});
   try {
-    const q = await pool.query(`INSERT INTO players(first_name,last_name,is_goalie) VALUES($1,$2,$3)
-      RETURNING id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo`,[firstName,lastName,isGoalie]);
+    const q = await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized) VALUES($1,$2,$3,$4)
+      RETURNING id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo`,[firstName,lastName,isGoalie,phone]);
     res.status(201).json(q.rows[0]);
   } catch (err) {
     if(err.code === '23505') return res.status(409).json({error:'That name is already on the list.'});
     console.error('Add player failed:',err);
     res.status(500).json({error:'Could not add your name. Please try again.'});
   }
+});
+
+app.post('/api/verify', async (req,res) => {
+  const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
+  if(!s.rows[0].ratings_open) return res.status(403).json({error:'Player ratings are currently closed.'});
+  const playerId = Number(req.body.playerId);
+  const phone = normalizePhone(req.body.phone);
+  if(!Number.isInteger(playerId) || phone.length !== 10) return res.status(400).json({error:'Enter your valid 10-digit phone number.'});
+  const q = await pool.query(`SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo
+    FROM players WHERE id=$1 AND active=TRUE AND phone_normalized=$2`,[playerId,phone]);
+  if(!q.rows[0]) return res.status(401).json({error:'The phone number does not match the selected player.'});
+  if(q.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
+  res.json({token:issuePlayerToken(playerId),player:q.rows[0]});
 });
 
 app.get('/api/players', async (_req,res) => {
@@ -96,7 +141,7 @@ app.get('/api/photo/:id', async (req,res) => {
   if(!q.rows[0] || !q.rows[0].photo) return res.status(404).end();
   res.type(q.rows[0].photo_type || 'image/jpeg').send(q.rows[0].photo);
 });
-app.post('/api/photo/:id', (req, res) => {
+app.post('/api/photo/:id', requirePlayer, (req, res) => {
   upload.single('photo')(req, res, async (uploadErr) => {
     if (uploadErr) {
       const message = uploadErr.code === 'LIMIT_FILE_SIZE'
@@ -125,7 +170,7 @@ app.post('/api/photo/:id', (req, res) => {
     }
   });
 });
-app.get('/api/rate/:raterId', async (req,res) => {
+app.get('/api/rate/:raterId', requirePlayer, async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
   const r=await pool.query('SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
@@ -137,7 +182,7 @@ app.get('/api/rate/:raterId', async (req,res) => {
   res.json({rater:r.rows[0],players:q.rows});
 });
 
-app.post('/api/save/:raterId', async (req,res) => {
+app.post('/api/save/:raterId', requirePlayer, async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
   const r=await pool.query('SELECT completed FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
@@ -153,7 +198,7 @@ app.post('/api/save/:raterId', async (req,res) => {
   res.json({ok:true});
 });
 
-app.post('/api/submit/:raterId', async (req,res) => {
+app.post('/api/submit/:raterId', requirePlayer, async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
   const {ratings}=req.body;

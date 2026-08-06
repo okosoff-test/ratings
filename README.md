@@ -24,3 +24,9 @@ Photos are resized to 320×320 JPEG and stored in the new Neon database.
 
 ## Admin player deletion
 The admin dashboard includes a Delete button for each player. Deleting removes the player from the public list and removes all ratings they gave or received.
+
+
+## Phone verification
+Players select their name and enter the phone number stored in the imported Friday/Sunday portal backups. Phone formatting is ignored. Newly added players must provide a 10-digit phone number. Verified access uses a signed, time-limited player token.
+
+Optional Render environment variable: `PLAYER_TOKEN_SECRET` (recommended). If omitted, `ADMIN_PASSWORD` is used to sign player tokens.
