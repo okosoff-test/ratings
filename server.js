@@ -210,11 +210,12 @@ app.post('/api/submit/:raterId', requirePlayer, async (req,res) => {
     if(!r.rows[0]) throw new Error('Player not found.');
     if(r.rows[0].completed) throw new Error('This player has already submitted.');
     if(!r.rows[0].has_photo) throw new Error('Upload your photo before submitting.');
-    const count=await client.query('SELECT COUNT(*)::int AS n FROM players WHERE id<>$1 AND active=TRUE',[req.params.raterId]);
-    if(ratings.length!==count.rows[0].n) throw new Error('Every player must be rated.');
+    if(ratings.length<1) throw new Error('Rate at least one player before submitting.');
     for(const item of ratings){
       const score=Number(item.score); const ratedId=Number(item.ratedId);
       if(!Number.isFinite(score)||score<1||score>10||ratedId===Number(req.params.raterId)) throw new Error('Invalid rating.');
+      const target=await client.query('SELECT id FROM players WHERE id=$1 AND active=TRUE',[ratedId]);
+      if(!target.rows[0]) throw new Error('One of the selected players is no longer available.');
       await client.query(`INSERT INTO ratings(rater_id,rated_id,score) VALUES($1,$2,$3)
         ON CONFLICT(rater_id,rated_id) DO UPDATE SET score=EXCLUDED.score`,[req.params.raterId,ratedId,score]);
     }

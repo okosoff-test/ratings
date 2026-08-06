@@ -30,3 +30,7 @@ The admin dashboard includes a Delete button for each player. Deleting removes t
 Players select their name and enter the phone number stored in the imported Friday/Sunday portal backups. Phone formatting is ignored. Newly added players must provide a 10-digit phone number. Verified access uses a signed, time-limited player token.
 
 Optional Render environment variable: `PLAYER_TOKEN_SECRET` (recommended). If omitted, `ADMIN_PASSWORD` is used to sign player tokens.
+
+
+## Partial submissions
+Players may leave unfamiliar players blank and submit the ratings they have completed. At least one rating and a photo are required. Blank players are excluded from that rater's results.
