@@ -145,7 +145,7 @@ app.get('/api/players', async (_req,res) => {
   const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Player ratings are currently closed.'});
   const q = await pool.query(`SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo
-    FROM players WHERE active=TRUE ORDER BY is_goalie, last_name, first_name`);
+    FROM players WHERE active=TRUE ORDER BY is_goalie, first_name, last_name`);
   res.json(q.rows);
 });
 app.get('/api/photo/:id', async (req,res) => {
@@ -189,7 +189,7 @@ app.get('/api/rate/:raterId', requirePlayer, async (req,res) => {
   if(!r.rows[0]) return res.status(404).json({error:'Player not found.'});
   const q=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.is_goalie,(p.photo IS NOT NULL) AS has_photo,rt.score
     FROM players p LEFT JOIN ratings rt ON rt.rated_id=p.id AND rt.rater_id=$1
-    WHERE p.id<>$1 AND p.active=TRUE ORDER BY p.is_goalie,p.last_name,p.first_name`,[req.params.raterId]);
+    WHERE p.id<>$1 AND p.active=TRUE ORDER BY p.is_goalie,p.first_name,p.last_name`,[req.params.raterId]);
   res.json({rater:r.rows[0],players:q.rows});
 });
 
@@ -240,7 +240,7 @@ app.get('/api/admin/data',requireAdmin,async(_req,res)=>{
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   const p=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.phone_normalized,p.is_goalie,p.completed,p.completed_at,(p.photo IS NOT NULL) AS has_photo,
     ROUND(AVG(r.score),2) AS average,COUNT(r.score)::int AS rating_count
-    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY p.is_goalie,p.last_name,p.first_name`);
+    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY p.is_goalie,p.first_name,p.last_name`);
   res.json({open:s.rows[0].ratings_open,players:p.rows});
 });
 
