@@ -165,9 +165,8 @@ app.post('/api/photo/:id', requirePlayer, (req, res) => {
       const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
       if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
       if(!req.file) return res.status(400).json({error:'Choose a photo.'});
-      const exists=await pool.query('SELECT completed FROM players WHERE id=$1 AND active=TRUE',[req.params.id]);
+      const exists=await pool.query('SELECT 1 FROM players WHERE id=$1 AND active=TRUE',[req.params.id]);
       if(!exists.rows[0]) return res.status(404).json({error:'Player not found.'});
-      if(exists.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
       let photo;
       try {
         photo=await sharp(req.file.buffer, { failOn: 'none' }).rotate().resize(320,320,{fit:'cover'}).jpeg({quality:78}).toBuffer();
@@ -196,14 +195,18 @@ app.get('/api/rate/:raterId', requirePlayer, async (req,res) => {
 app.post('/api/save/:raterId', requirePlayer, async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
-  const r=await pool.query('SELECT completed FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
+  const r=await pool.query('SELECT 1 FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
   if(!r.rows[0]) return res.status(404).json({error:'Player not found.'});
-  if(r.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
-  const ratedId=Number(req.body.ratedId); const score=Number(req.body.score);
-  if(!Number.isInteger(ratedId)||ratedId===Number(req.params.raterId)||!Number.isFinite(score)||score<1||score>10)
-    return res.status(400).json({error:'Invalid rating.'});
+  const ratedId=Number(req.body.ratedId);
+  if(!Number.isInteger(ratedId)||ratedId===Number(req.params.raterId)) return res.status(400).json({error:'Invalid rating.'});
   const target=await pool.query('SELECT 1 FROM players WHERE id=$1 AND active=TRUE',[ratedId]);
   if(!target.rows[0]) return res.status(404).json({error:'Rated player not found.'});
+  if(req.body.score===null || req.body.score==='' || typeof req.body.score==='undefined'){
+    await pool.query('DELETE FROM ratings WHERE rater_id=$1 AND rated_id=$2',[req.params.raterId,ratedId]);
+    return res.json({ok:true});
+  }
+  const score=Number(req.body.score);
+  if(!Number.isFinite(score)||score<1||score>10) return res.status(400).json({error:'Invalid rating.'});
   await pool.query(`INSERT INTO ratings(rater_id,rated_id,score) VALUES($1,$2,$3)
     ON CONFLICT(rater_id,rated_id) DO UPDATE SET score=EXCLUDED.score,created_at=NOW()`,[req.params.raterId,ratedId,score]);
   res.json({ok:true});
@@ -219,7 +222,6 @@ app.post('/api/submit/:raterId', requirePlayer, async (req,res) => {
     await client.query('BEGIN');
     const r=await client.query('SELECT completed,(photo IS NOT NULL) AS has_photo FROM players WHERE id=$1 AND active=TRUE FOR UPDATE',[req.params.raterId]);
     if(!r.rows[0]) throw new Error('Player not found.');
-    if(r.rows[0].completed) throw new Error('This player has already submitted.');
     if(!r.rows[0].has_photo) throw new Error('Upload your photo before submitting.');
     if(ratings.length<1) throw new Error('Rate at least one player before submitting.');
     for(const item of ratings){

@@ -34,3 +34,7 @@ Optional Render environment variable: `PLAYER_TOKEN_SECRET` (recommended). If om
 
 ## Partial submissions
 Players may leave unfamiliar players blank and submit the ratings they have completed. At least one rating and a photo are required. Blank players are excluded from that rater's results.
+
+
+## Editing after submission
+Players may return while ratings are open, verify by phone, review their prior scores, change or clear ratings, and submit updates again. Submission no longer permanently locks a player's ratings.
