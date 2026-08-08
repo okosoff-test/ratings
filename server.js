@@ -55,6 +55,17 @@ async function initDb() {
     await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized,nickname) VALUES($1,$2,$3,$4,$5)
       ON CONFLICT(first_name,last_name) DO UPDATE SET is_goalie=EXCLUDED.is_goalie, phone_normalized=EXCLUDED.phone_normalized, nickname=CASE WHEN EXCLUDED.nickname<>'' THEN EXCLUDED.nickname ELSE players.nickname END`, [first,last,goalie,phone,nickname]);
   }
+  // Backfill known portal nicknames by phone so existing ratings DB rows also get them.
+  const nicknameByPhone = {
+    '5199826311':'Craiggy', '5199959884':'ly', '2263465222':'The Hitman',
+    '5198196863':'San', '5199657030':'Butch', '5199807794':'Coach',
+    '2263446040':'Knee Hockey', '5199844043':'The Finisher',
+    '5068509258':'Cookie Monster', '5195628732':'Slo-Mo',
+    '5197966541':'The Machine', '5195660729':'D-Rock', '3135733209':'Slick'
+  };
+  for (const [phone,nickname] of Object.entries(nicknameByPhone)) {
+    await pool.query('UPDATE players SET nickname=$1 WHERE phone_normalized=$2 AND active=TRUE', [nickname, phone]);
+  }
 }
 
 
@@ -127,7 +138,6 @@ app.post('/api/verify', async (req,res) => {
   const q = await pool.query(`SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo
     FROM players WHERE id=$1 AND active=TRUE AND phone_normalized=$2`,[playerId,phone]);
   if(!q.rows[0]) return res.status(401).json({error:'The phone number does not match the selected player.'});
-  if(q.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
   res.json({token:issuePlayerToken(playerId),player:q.rows[0]});
 });
 
@@ -177,7 +187,6 @@ app.get('/api/rate/:raterId', requirePlayer, async (req,res) => {
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
   const r=await pool.query('SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
   if(!r.rows[0]) return res.status(404).json({error:'Player not found.'});
-  if(r.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
   const q=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.is_goalie,(p.photo IS NOT NULL) AS has_photo,rt.score
     FROM players p LEFT JOIN ratings rt ON rt.rated_id=p.id AND rt.rater_id=$1
     WHERE p.id<>$1 AND p.active=TRUE ORDER BY p.is_goalie,p.last_name,p.first_name`,[req.params.raterId]);
