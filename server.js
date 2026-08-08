@@ -59,7 +59,7 @@ async function initDb() {
   const nicknameByPhone = {
     '5199826311':'Craiggy', '5199959884':'ly', '2263465222':'The Hitman',
     '5198196863':'San', '5199657030':'Butch', '5199807794':'Coach',
-    '2263446040':'Knee Hockey', '5199844043':'The Finisher',
+    '2263446040':'Knee Hawkey', '5199844043':'The Finisher',
     '5068509258':'Cookie Monster', '5195628732':'Slo-Mo',
     '5197966541':'The Machine', '5195660729':'D-Rock', '3135733209':'Slick'
   };
