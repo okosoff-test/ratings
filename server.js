@@ -19,14 +19,14 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || ADMIN_PASSWORD;
 
 const seedPlayers = [
- ['Francesco','Aiuto',false,'5199801015'],['Sean','Antaya',false,'5199846719'],['Brett','Boissonneau',false,'2263465222'],['Derek','Boissonneau',false,'5195660729'],
- ['Dj','Cassady',false,'5199657030'],['Luca','Cavallaro',false,'2263457261'],['Phong','Chau',false,'5197966541'],['Larry','Cichon',false,'5199951267'],
- ['Anthony','Derose',false,'2267870085'],['Jeyden','Edwards',false,'2263477632'],['Marc','Frey',false,'5199711441'],['Kaoru','Geddes',false,'2267570998'],
- ['Spencer','Gereige',false,'5195620385'],['Brad','Gervais',false,'2269751940'],['Matthew','Glavine',false,'4164571639'],['Jesse','Gouin',false,'3135733209'],
- ['Jason','Haskett',false,'5199807794'],['Daniel','Hrubik',false,'5198196863'],['Maurice','Hung',false,'5195628732'],['Sean','Ivany',false,'5068509258'],
- ['Ethan','Lafontaine',false,'2263503276'],['Phan','Ly',false,'5195669288'],['Drew','Menard',false,'5195649643'],['Ferd','Mireault',false,'2269758301'],
- ['Kevin','Richter',false,'5197840563'],['Justin','Simard',false,'5195646366'],['Kyle','Smith',false,'5199844043'],['Kyle','Gibson',false,'2262465611'],['Andrew','Papas',false,'5193001621'],['Max','Cichon',false,'5199195154'],['John','Srnec',false,'2263446040'],
- ['Mat','Carriere',true,'2263500217'],['Hao','Chau',true,'5199959884'],['Lilly','Isberg',true,'2898084633'],['Craig','Scolack',true,'5199826311']
+ ['Francesco','Aiuto',false,'5199801015',''],['Sean','Antaya',false,'5199846719',''],['Brett','Boissonneau',false,'2263465222','The Hitman'],['Derek','Boissonneau',false,'5195660729','D-Rock'],
+ ['Dj','Cassady',false,'5199657030','Butch'],['Luca','Cavallaro',false,'2263457261',''],['Phong','Chau',false,'5197966541','The Machine'],['Larry','Cichon',false,'5199951267',''],
+ ['Anthony','Derose',false,'2267870085',''],['Jeyden','Edwards',false,'2263477632',''],['Marc','Frey',false,'5199711441',''],['Kaoru','Geddes',false,'2267570998',''],
+ ['Spencer','Gereige',false,'5195620385',''],['Brad','Gervais',false,'2269751940',''],['Matthew','Glavine',false,'4164571639',''],['Jesse','Gouin',false,'3135733209','Slick'],
+ ['Jason','Haskett',false,'5199807794','Coach'],['Daniel','Hrubik',false,'5198196863','San'],['Maurice','Hung',false,'5195628732','Slo-Mo'],['Sean','Ivany',false,'5068509258','Cookie Monster'],
+ ['Ethan','Lafontaine',false,'2263503276',''],['Phan','Ly',false,'5195669288',''],['Drew','Menard',false,'5195649643',''],['Ferd','Mireault',false,'2269758301',''],
+ ['Kevin','Richter',false,'5197840563',''],['Justin','Simard',false,'5195646366',''],['Kyle','Smith',false,'5199844043','The Finisher'],['Kyle','Gibson',false,'2262465611',''],['Andrew','Papas',false,'5193001621',''],['Max','Cichon',false,'5199195154',''],['John','Srnec',false,'2263446040','Knee Hockey'],
+ ['Mat','Carriere',true,'2263500217',''],['Hao','Chau',true,'5199959884','ly'],['Lilly','Isberg',true,'2898084633',''],['Craig','Scolack',true,'5199826311','Craiggy']
 ];
 
 app.use(express.json({ limit: '1mb' }));
@@ -40,19 +40,20 @@ async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS players (
     id SERIAL PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, is_goalie BOOLEAN NOT NULL DEFAULT FALSE,
     photo BYTEA, photo_type TEXT, completed BOOLEAN NOT NULL DEFAULT FALSE, completed_at TIMESTAMPTZ,
-    active BOOLEAN NOT NULL DEFAULT TRUE, phone_normalized TEXT, UNIQUE(first_name,last_name)
+    active BOOLEAN NOT NULL DEFAULT TRUE, phone_normalized TEXT, nickname TEXT NOT NULL DEFAULT '', UNIQUE(first_name,last_name)
   )`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS phone_normalized TEXT`);
+  await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS nickname TEXT NOT NULL DEFAULT ''`);
   await pool.query(`CREATE TABLE IF NOT EXISTS ratings (
     id SERIAL PRIMARY KEY, rater_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     rated_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     score NUMERIC(3,1) NOT NULL CHECK(score>=1 AND score<=10), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(rater_id,rated_id), CHECK(rater_id<>rated_id)
   )`);
-  for (const [first,last,goalie,phone] of seedPlayers) {
-    await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized) VALUES($1,$2,$3,$4)
-      ON CONFLICT(first_name,last_name) DO UPDATE SET is_goalie=EXCLUDED.is_goalie, phone_normalized=EXCLUDED.phone_normalized`, [first,last,goalie,phone]);
+  for (const [first,last,goalie,phone,nickname] of seedPlayers) {
+    await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized,nickname) VALUES($1,$2,$3,$4,$5)
+      ON CONFLICT(first_name,last_name) DO UPDATE SET is_goalie=EXCLUDED.is_goalie, phone_normalized=EXCLUDED.phone_normalized, nickname=CASE WHEN EXCLUDED.nickname<>'' THEN EXCLUDED.nickname ELSE players.nickname END`, [first,last,goalie,phone,nickname]);
   }
 }
 
@@ -96,18 +97,19 @@ app.post('/api/players/add', async (req,res) => {
   const firstName = String(req.body.firstName || '').trim().replace(/\s+/g,' ');
   const lastName = String(req.body.lastName || '').trim().replace(/\s+/g,' ');
   const isGoalie = Boolean(req.body.isGoalie);
+  const nickname = String(req.body.nickname || '').trim().replace(/\s+/g,' ');
   const phone = normalizePhone(req.body.phone);
   if(phone.length !== 10) return res.status(400).json({error:'Enter a valid 10-digit phone number.'});
   if(firstName.length < 2 || lastName.length < 2) return res.status(400).json({error:'Enter both your first and last name.'});
-  if(firstName.length > 50 || lastName.length > 50) return res.status(400).json({error:'Name is too long.'});
+  if(firstName.length > 50 || lastName.length > 50 || nickname.length > 50) return res.status(400).json({error:'Name or nickname is too long.'});
   if(!/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(firstName) || !/^[A-Za-zÀ-ÖØ-öø-ÿ'’ .-]+$/.test(lastName))
     return res.status(400).json({error:'Use letters, spaces, apostrophes, periods, or hyphens only.'});
-  const existing = await pool.query(`SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo
+  const existing = await pool.query(`SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo
     FROM players WHERE active=TRUE AND LOWER(first_name)=LOWER($1) AND LOWER(last_name)=LOWER($2) LIMIT 1`,[firstName,lastName]);
   if(existing.rows[0]) return res.status(409).json({error:'That name is already on the list.',player:existing.rows[0]});
   try {
-    const q = await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized) VALUES($1,$2,$3,$4)
-      RETURNING id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo`,[firstName,lastName,isGoalie,phone]);
+    const q = await pool.query(`INSERT INTO players(first_name,last_name,is_goalie,phone_normalized,nickname) VALUES($1,$2,$3,$4,$5)
+      RETURNING id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo`,[firstName,lastName,isGoalie,phone,nickname]);
     res.status(201).json(q.rows[0]);
   } catch (err) {
     if(err.code === '23505') return res.status(409).json({error:'That name is already on the list.'});
@@ -122,7 +124,7 @@ app.post('/api/verify', async (req,res) => {
   const playerId = Number(req.body.playerId);
   const phone = normalizePhone(req.body.phone);
   if(!Number.isInteger(playerId) || phone.length !== 10) return res.status(400).json({error:'Enter your valid 10-digit phone number.'});
-  const q = await pool.query(`SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo
+  const q = await pool.query(`SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo
     FROM players WHERE id=$1 AND active=TRUE AND phone_normalized=$2`,[playerId,phone]);
   if(!q.rows[0]) return res.status(401).json({error:'The phone number does not match the selected player.'});
   if(q.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
@@ -132,7 +134,7 @@ app.post('/api/verify', async (req,res) => {
 app.get('/api/players', async (_req,res) => {
   const s = await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Player ratings are currently closed.'});
-  const q = await pool.query(`SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo
+  const q = await pool.query(`SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo
     FROM players WHERE active=TRUE ORDER BY is_goalie, last_name, first_name`);
   res.json(q.rows);
 });
@@ -173,10 +175,10 @@ app.post('/api/photo/:id', requirePlayer, (req, res) => {
 app.get('/api/rate/:raterId', requirePlayer, async (req,res) => {
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   if(!s.rows[0].ratings_open) return res.status(403).json({error:'Ratings are closed.'});
-  const r=await pool.query('SELECT id,first_name,last_name,is_goalie,completed,(photo IS NOT NULL) AS has_photo FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
+  const r=await pool.query('SELECT id,first_name,last_name,nickname,is_goalie,completed,(photo IS NOT NULL) AS has_photo FROM players WHERE id=$1 AND active=TRUE',[req.params.raterId]);
   if(!r.rows[0]) return res.status(404).json({error:'Player not found.'});
   if(r.rows[0].completed) return res.status(409).json({error:'This player has already submitted.'});
-  const q=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.is_goalie,(p.photo IS NOT NULL) AS has_photo,rt.score
+  const q=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.is_goalie,(p.photo IS NOT NULL) AS has_photo,rt.score
     FROM players p LEFT JOIN ratings rt ON rt.rated_id=p.id AND rt.rater_id=$1
     WHERE p.id<>$1 AND p.active=TRUE ORDER BY p.is_goalie,p.last_name,p.first_name`,[req.params.raterId]);
   res.json({rater:r.rows[0],players:q.rows});
@@ -227,7 +229,7 @@ app.post('/api/submit/:raterId', requirePlayer, async (req,res) => {
 
 app.get('/api/admin/data',requireAdmin,async(_req,res)=>{
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
-  const p=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.is_goalie,p.completed,p.completed_at,(p.photo IS NOT NULL) AS has_photo,
+  const p=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.phone_normalized,p.is_goalie,p.completed,p.completed_at,(p.photo IS NOT NULL) AS has_photo,
     ROUND(AVG(r.score),2) AS average,COUNT(r.score)::int AS rating_count
     FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY p.is_goalie,p.last_name,p.first_name`);
   res.json({open:s.rows[0].ratings_open,players:p.rows});
@@ -235,8 +237,8 @@ app.get('/api/admin/data',requireAdmin,async(_req,res)=>{
 
 app.get('/api/admin/ratings',requireAdmin,async(_req,res)=>{
   const q=await pool.query(`SELECT r.id,r.rater_id,r.rated_id,r.score,r.created_at,
-    giver.first_name AS rater_first_name,giver.last_name AS rater_last_name,
-    receiver.first_name AS rated_first_name,receiver.last_name AS rated_last_name,
+    giver.first_name AS rater_first_name,giver.last_name AS rater_last_name,giver.nickname AS rater_nickname,
+    receiver.first_name AS rated_first_name,receiver.last_name AS rated_last_name,receiver.nickname AS rated_nickname,
     receiver.is_goalie AS rated_is_goalie
     FROM ratings r
     JOIN players giver ON giver.id=r.rater_id
@@ -252,6 +254,24 @@ app.post('/api/admin/toggle',requireAdmin,async(req,res)=>{
 app.post('/api/admin/reset/:id',requireAdmin,async(req,res)=>{
   const c=await pool.connect(); try{await c.query('BEGIN');await c.query('DELETE FROM ratings WHERE rater_id=$1',[req.params.id]);await c.query('UPDATE players SET completed=FALSE,completed_at=NULL WHERE id=$1',[req.params.id]);await c.query('COMMIT');res.json({ok:true});}catch(e){await c.query('ROLLBACK');res.status(400).json({error:e.message});}finally{c.release();}
 });
+app.put('/api/admin/player/:id',requireAdmin,async(req,res)=>{
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)) return res.status(400).json({error:'Invalid player.'});
+  const firstName=String(req.body.firstName||'').trim().replace(/\s+/g,' ');
+  const lastName=String(req.body.lastName||'').trim().replace(/\s+/g,' ');
+  const nickname=String(req.body.nickname||'').trim().replace(/\s+/g,' ');
+  const phone=normalizePhone(req.body.phone);
+  const isGoalie=Boolean(req.body.isGoalie);
+  if(firstName.length<2||lastName.length<2) return res.status(400).json({error:'Enter first and last name.'});
+  if(firstName.length>50||lastName.length>50||nickname.length>50) return res.status(400).json({error:'Name or nickname is too long.'});
+  if(phone.length!==10) return res.status(400).json({error:'Enter a valid 10-digit phone number.'});
+  try{
+    const q=await pool.query(`UPDATE players SET first_name=$1,last_name=$2,nickname=$3,phone_normalized=$4,is_goalie=$5 WHERE id=$6 AND active=TRUE RETURNING id,first_name,last_name,nickname,phone_normalized,is_goalie`,[firstName,lastName,nickname,phone,isGoalie,id]);
+    if(!q.rows[0]) return res.status(404).json({error:'Player not found.'});
+    res.json({ok:true,player:q.rows[0]});
+  }catch(e){ if(e.code==='23505') return res.status(409).json({error:'Another player already has that first and last name.'}); res.status(400).json({error:e.message}); }
+});
+
 app.delete('/api/admin/player/:id',requireAdmin,async(req,res)=>{
   const id=Number(req.params.id);
   if(!Number.isInteger(id)) return res.status(400).json({error:'Invalid player.'});
@@ -270,9 +290,9 @@ app.delete('/api/admin/player/:id',requireAdmin,async(req,res)=>{
   }finally{c.release();}
 });
 app.get('/api/admin/export',requireAdmin,async(_req,res)=>{
-  const q=await pool.query(`SELECT p.first_name,p.last_name,p.is_goalie,ROUND(AVG(r.score),2) average,COUNT(r.score)::int rating_count
+  const q=await pool.query(`SELECT p.first_name,p.last_name,p.nickname,p.is_goalie,ROUND(AVG(r.score),2) average,COUNT(r.score)::int rating_count
     FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY average DESC NULLS LAST,p.last_name`);
-  const lines=['Name,Goalie,Average,Rating Count',...q.rows.map(x=>`"${x.first_name} ${x.last_name}",${x.is_goalie?'Yes':'No'},${x.average||''},${x.rating_count}`)];
+  const lines=['Name,Nickname,Goalie,Average,Rating Count',...q.rows.map(x=>`"${x.first_name} ${x.last_name}","${String(x.nickname||'').replace(/"/g,'""')}",${x.is_goalie?'Yes':'No'},${x.average||''},${x.rating_count}`)];
   res.type('text/csv').attachment('player-ratings.csv').send(lines.join('\n'));
 });
 
