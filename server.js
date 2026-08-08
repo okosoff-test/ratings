@@ -25,7 +25,7 @@ const seedPlayers = [
  ['Spencer','Gereige',false,'5195620385'],['Brad','Gervais',false,'2269751940'],['Matthew','Glavine',false,'4164571639'],['Jesse','Gouin',false,'3135733209'],
  ['Jason','Haskett',false,'5199807794'],['Daniel','Hrubik',false,'5198196863'],['Maurice','Hung',false,'5195628732'],['Sean','Ivany',false,'5068509258'],
  ['Ethan','Lafontaine',false,'2263503276'],['Phan','Ly',false,'5195669288'],['Drew','Menard',false,'5195649643'],['Ferd','Mireault',false,'2269758301'],
- ['Kevin','Richter',false,'5197840563'],['Justin','Simard',false,'5195646366'],['Kyle','Smith',false,'5199844043'],['John','Srnec',false,'2263446040'],
+ ['Kevin','Richter',false,'5197840563'],['Justin','Simard',false,'5195646366'],['Kyle','Smith',false,'5199844043'],['Kyle','Gibson',false,'2262465611'],['Andrew','Papas',false,'5193001621'],['Max','Cichon',false,'5199195154'],['John','Srnec',false,'2263446040'],
  ['Mat','Carriere',true,'2263500217'],['Hao','Chau',true,'5199959884'],['Lilly','Isberg',true,'2898084633'],['Craig','Scolack',true,'5199826311']
 ];
 
