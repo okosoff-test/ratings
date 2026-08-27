@@ -242,7 +242,7 @@ app.get('/api/admin/data',requireAdmin,async(_req,res)=>{
   const s=await pool.query('SELECT ratings_open FROM settings WHERE id=1');
   const p=await pool.query(`SELECT p.id,p.first_name,p.last_name,p.nickname,p.phone_normalized,p.is_goalie,p.completed,p.completed_at,(p.photo IS NOT NULL) AS has_photo,
     ROUND(AVG(r.score),2) AS average,COUNT(r.score)::int AS rating_count
-    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY p.is_goalie,p.first_name,p.last_name`);
+    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id LEFT JOIN players giver ON giver.id=r.rater_id AND giver.active=TRUE WHERE p.active=TRUE AND (r.id IS NULL OR giver.id IS NOT NULL) GROUP BY p.id ORDER BY p.is_goalie,p.first_name,p.last_name`);
   res.json({open:s.rows[0].ratings_open,players:p.rows});
 });
 
@@ -302,7 +302,7 @@ app.delete('/api/admin/player/:id',requireAdmin,async(req,res)=>{
 });
 app.get('/api/admin/export',requireAdmin,async(_req,res)=>{
   const q=await pool.query(`SELECT p.first_name,p.last_name,p.nickname,p.is_goalie,ROUND(AVG(r.score),2) average,COUNT(r.score)::int rating_count
-    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id WHERE p.active=TRUE GROUP BY p.id ORDER BY average DESC NULLS LAST,p.last_name`);
+    FROM players p LEFT JOIN ratings r ON r.rated_id=p.id LEFT JOIN players giver ON giver.id=r.rater_id AND giver.active=TRUE WHERE p.active=TRUE AND (r.id IS NULL OR giver.id IS NOT NULL) GROUP BY p.id ORDER BY average DESC NULLS LAST,p.last_name`);
   const lines=['Name,Nickname,Goalie,Average,Rating Count',...q.rows.map(x=>`"${x.first_name} ${x.last_name}","${String(x.nickname||'').replace(/"/g,'""')}",${x.is_goalie?'Yes':'No'},${x.average||''},${x.rating_count}`)];
   res.type('text/csv').attachment('player-ratings.csv').send(lines.join('\n'));
 });
