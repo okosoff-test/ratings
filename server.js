@@ -44,7 +44,7 @@ async function initDb() {
   )`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS phone_normalized TEXT`);
-await pool.query('UPDATE players SET nickname=NULL');
+await pool.query('UPDATE players SET nickname=''');
   await pool.query(`CREATE TABLE IF NOT EXISTS ratings (
     id SERIAL PRIMARY KEY, rater_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     rated_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
