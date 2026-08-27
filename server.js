@@ -44,7 +44,7 @@ async function initDb() {
   )`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS phone_normalized TEXT`);
-  await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS nickname TEXT NOT NULL DEFAULT ''`);
+await pool.query('UPDATE players SET nickname=NULL');
   await pool.query(`CREATE TABLE IF NOT EXISTS ratings (
     id SERIAL PRIMARY KEY, rater_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     rated_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
@@ -64,8 +64,7 @@ async function initDb() {
     '5197966541':'The Machine', '5195660729':'D-Rock', '3135733209':'Slick'
   };
   for (const [phone,nickname] of Object.entries(nicknameByPhone)) {
-    await pool.query('UPDATE players SET nickname=$1 WHERE phone_normalized=$2 AND active=TRUE', [nickname, phone]);
-  }
+}
 }
 
 
